@@ -1,0 +1,15 @@
+# build / capture artifacts
+*.exe
+*.log
+*.pkl
+__pycache__/
+
+# never commit Apple binaries or derived drivers
+*.sys
+*.cat
+*.pfx
+*.cer
+
+# dead-end scratch scripts
+km2.py
+km3.py
