@@ -56,11 +56,28 @@ python patcher/patch_keymagic.py              # writes KeyMagicFnSwap.sys (unsig
 The patch site is found by byte signature, so it should work on other builds that share the code. It was
 developed against `KeyMagic.sys` 6.1.8086.1, SHA-256 `a92d0bff926f23cd28191a0ff77b9a60b2a92d44b62db27f1610d4e3aefac8d8`.
 
-Loading a modified kernel driver on 64-bit Windows needs a valid signature that your machine trusts (for
-example test-signing mode). That part depends on your setup and is not automated here yet.
+### Install (Windows PowerShell 5.1 or PowerShell 7)
 
-`patcher/Uninstall-FnCtrlSwap.ps1` restores the original driver path if you point the `KeyMagic` service at a
-copy; it is a no-op otherwise.
+Loading a modified kernel driver on 64-bit Windows needs a signature your machine trusts. The simplest setup is
+test-signing mode (`bcdedit /set testsigning on`, reboot; requires Secure Boot off, which is the case for
+Boot Camp on Intel Macs) plus the Windows SDK's `signtool`.
+
+```
+powershell -File patcher\Install-FnCtrlSwap.ps1 -Driver KeyMagicFnSwap.sys
+```
+
+The script asks for elevation once (UAC), finds a usable code-signing certificate in `LocalMachine\My`
+automatically (or asks which, or offers a confirm-first wizard to create and trust a self-signed one), signs the
+copy, installs it as `System32\drivers\KeyMagicFnSwap.sys`, and points the `KeyMagic` service `ImagePath` at it.
+The original `KeyMagic.sys` is never modified and the old path is saved as `ImagePath.orig`. Everything is logged to
+`patcher\install.log`. Reboot to load it.
+
+```
+powershell -File patcher\Uninstall-FnCtrlSwap.ps1     # restore the original driver path, then reboot
+```
+
+Recovery without the script (for example from WinRE, or if the keyboard is dead):
+`reg add HKLM\SYSTEM\CurrentControlSet\Services\KeyMagic /v ImagePath /t REG_EXPAND_SZ /d \SystemRoot\System32\drivers\KeyMagic.sys /f`
 
 ## Risks
 
