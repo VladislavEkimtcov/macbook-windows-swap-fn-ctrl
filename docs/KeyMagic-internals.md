@@ -3,8 +3,9 @@
 Reverse-engineered by static disassembly of `KeyMagic.sys` 6.1.8086.1 (SHA-256
 `a92d0bff926f23cd28191a0ff77b9a60b2a92d44b62db27f1610d4e3aefac8d8`), plus live capture on a
 MacBook Air A1465 (`MacBookAir6,1`, USB `VID_05AC&PID_0290`). Addresses are RVAs in that build.
-The scripts that produced this are `km.py` (PE/`.pdata` parser and string xrefs), `km4.py`
-(per-function disassembler), `km5.py`, `km6.py`, `km7.py` in the repo root.
+Method: parse the PE by hand, take exact function boundaries from `.pdata`, disassemble one function at a
+time with Python + `capstone` (a linear sweep of the whole section with detail on can exhaust memory), and
+follow rip-relative references to strings and data tables. `tools/hidcaps.py` produced the report layout.
 
 ## Where it sits
 

@@ -2,13 +2,12 @@
 
 Can you swap the `fn` and `control` keys on a MacBook keyboard while running Windows 10 or 11 under
 Boot Camp? Not with AutoHotkey, SharpKeys, PowerToys Keyboard Manager, KeyTweak or the `Scancode Map`
-registry value. This repo shows why with measurements from a real **MacBook Air A1465 (MacBookAir6,1)**,
-and where the swap *can* be made: Apple's Boot Camp keyboard filter driver, **`KeyMagic.sys`**.
+registry value. This repo shows why, with measurements from a real **MacBook Air A1465 (MacBookAir6,1)**,
+and a working fix: a small patch to Apple's Boot Camp keyboard filter driver, **`KeyMagic.sys`**.
 
-> **Status: research done, patcher written, patched driver not yet booted.**
-> The findings below were measured on hardware. The patch is derived from disassembly and its output
-> was checked instruction by instruction, but it has **not been loaded on a running system yet**. This
-> README will be updated with the result. Treat it as experimental and read *Risks*.
+> **Status: works.** Tested on a MacBook Air A1465, Windows 10 IoT Enterprise LTSC 2021, Boot Camp 6.1.8086.2:
+> after installing the patched driver and rebooting, the physical Fn key acts as Control and the physical
+> Control key acts as Fn. Other models are untested. Read *Risks* before installing.
 
 ## Why no remapper can swap Fn and Ctrl
 
@@ -17,7 +16,7 @@ On the built-in Apple keyboard, Fn is not a key as far as Windows is concerned. 
 Apple's `KeyMagic.sys` is a lower filter under `HidUsb`. It reads that bit to decide which translations
 to apply, then throws it away before Windows parses the report.
 
-Captured with a low-level keyboard hook on the built-in keyboard:
+Captured with a low-level keyboard hook on the built-in keyboard, before the patch:
 
 | pressed | Windows saw |
 |---|---|
@@ -28,11 +27,11 @@ Captured with a low-level keyboard hook on the built-in keyboard:
 | Fn + Return | Insert |
 | Fn + F1 | nothing (brightness is handled below the key layer) |
 
-So Fn has no scan code, no virtual key and no Raw Input event. Tools that remap scan codes or hook keys
-have nothing to grab. I also checked the alternatives: the keyboard collection cannot be opened for reading
-from user mode, `HidD_GetInputReport` on it fails, `KeyMagic`'s control device (`\\.\AppleKeyboard`) has no
-IOCTL for Fn state or keymaps, and the registry `Keymap` / `KeymapFn` / `KeymapNumlock` tables only rewrite the
-six key slots and never touch the modifier byte. Details: [docs/KeyMagic-internals.md](docs/KeyMagic-internals.md).
+So Fn has no scan code, no virtual key and no Raw Input event; tools that remap scan codes or hook keys have
+nothing to grab. The alternatives were checked too: the keyboard collection cannot be opened for reading from user
+mode, `HidD_GetInputReport` on it fails, `KeyMagic`'s control device (`\\.\AppleKeyboard`) has no IOCTL for Fn state
+or keymaps, and the registry `Keymap` / `KeymapFn` / `KeymapNumlock` tables only rewrite the six key slots and never
+touch the modifier byte. Details: [docs/KeyMagic-internals.md](docs/KeyMagic-internals.md).
 
 ## The patch
 
@@ -53,8 +52,8 @@ python patcher/patch_keymagic.py --check      # verify your driver build is patc
 python patcher/patch_keymagic.py              # writes KeyMagicFnSwap.sys (unsigned)
 ```
 
-The patch site is found by byte signature, so it should work on other builds that share the code. It was
-developed against `KeyMagic.sys` 6.1.8086.1, SHA-256 `a92d0bff926f23cd28191a0ff77b9a60b2a92d44b62db27f1610d4e3aefac8d8`.
+The patch site is found by byte signature. It was developed against `KeyMagic.sys` 6.1.8086.1,
+SHA-256 `a92d0bff926f23cd28191a0ff77b9a60b2a92d44b62db27f1610d4e3aefac8d8`.
 
 ### Install (Windows PowerShell 5.1 or PowerShell 7)
 
@@ -69,8 +68,8 @@ powershell -File patcher\Install-FnCtrlSwap.ps1 -Driver KeyMagicFnSwap.sys
 The script asks for elevation once (UAC), finds a usable code-signing certificate in `LocalMachine\My`
 automatically (or asks which, or offers a confirm-first wizard to create and trust a self-signed one), signs the
 copy, installs it as `System32\drivers\KeyMagicFnSwap.sys`, and points the `KeyMagic` service `ImagePath` at it.
-The original `KeyMagic.sys` is never modified and the old path is saved as `ImagePath.orig`. Everything is logged to
-`patcher\install.log`. Reboot to load it.
+The original `KeyMagic.sys` is never modified and the old path is saved as `ImagePath.orig`. Everything is logged
+to `patcher\install.log`. Reboot to load it.
 
 ```
 powershell -File patcher\Uninstall-FnCtrlSwap.ps1     # restore the original driver path, then reboot
@@ -83,7 +82,8 @@ Recovery without the script (for example from WinRE, or if the keyboard is dead)
 
 `KeyMagic` is a lower filter for the keyboard. A broken replacement can leave the built-in keyboard dead until
 you restore the original, so keep an external USB keyboard (KeyMagic only filters Apple keyboards) or remote
-access available. Do not overwrite the original `KeyMagic.sys`; load a separate copy so rollback is one registry value.
+access available the first time. Test-signing mode lowers Windows' driver-signing protection and shows a desktop
+watermark. A Boot Camp reinstall or update may restore the stock `ImagePath`; run the installer again.
 
 ## User-mode only? (honourable mention)
 
@@ -94,22 +94,23 @@ Without touching the driver you can get part of the way, but not all of it:
 * **Fn acting as Ctrl** cannot be done cleanly: Fn is invisible until another key is pressed. Remapping keys through
   `KeymapFn` to spare usages would give Ctrl+key combos, but never Ctrl+click or Ctrl+scroll.
 
-Neither is implemented here.
+Neither is implemented here; the driver patch does both properly.
 
-## Tools in this repo
+## Repo layout
 
-| file | what it does |
+| path | what it is |
 |---|---|
 | `patcher/patch_keymagic.py` | builds the patched copy of your local `KeyMagic.sys` |
-| `FnWatch.cs` | low-level hook + Raw Input logger (build with the in-box `csc.exe`); the Raw Input part did not log on the first run |
-| `km.py`, `km4.py`, `km5.py`, `km6.py`, `km7.py` | PE parser, per-function disassembler and cross-reference finders used for the analysis (need `capstone`) |
-| `docs/KeyMagic-internals.md` | report layout, code paths, tables, IOCTLs |
+| `patcher/Install-FnCtrlSwap.ps1`, `Uninstall-FnCtrlSwap.ps1` | sign + install / roll back (PowerShell 5.1 and 7) |
+| `tools/FnWatch.cs` | key-event logger (low-level hook); build with the in-box `csc.exe` |
+| `tools/hidcaps.py` | dumps HID collections and usages; shows the Fn bit in the keyboard report |
+| `docs/KeyMagic-internals.md` | report layout, code paths, tables, IOCTLs, how the analysis was done |
 
 ## Compatibility
 
-Measured on: MacBook Air A1465 (MacBookAir6,1), Windows 10 IoT Enterprise LTSC 2021, Boot Camp 6.1.8086.2, keyboard
-`USB\VID_05AC&PID_0290`. `KeyMagic`'s `KeyboardTable` lists about 70 Apple keyboard product IDs, so other Boot Camp
-MacBooks likely share the code path, but that is untested.
+Confirmed on: MacBook Air A1465 (MacBookAir6,1), keyboard `USB\VID_05AC&PID_0290`. `KeyMagic`'s `KeyboardTable`
+lists about 70 Apple keyboard product IDs, so other Boot Camp MacBooks likely share the code path, but that is
+untested; reports welcome.
 
 ## Legal
 
